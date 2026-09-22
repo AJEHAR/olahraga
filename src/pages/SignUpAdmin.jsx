@@ -30,7 +30,13 @@ export default function SignUpAdmin() {
     try {
       // Semak kod pertandingan belum digunakan (doc id = kod).
       const codeUpper = form.compCode.trim().toUpperCase()
-      const existing = await getDoc(doc(db, 'competitions', codeUpper))
+      let existing
+      try {
+        existing = await getDoc(doc(db, 'competitions', codeUpper))
+      } catch (err) {
+        err.stepLabel = 'semak-kod'
+        throw err
+      }
       if (existing.exists()) {
         setError('Kod Pertandingan ini sudah digunakan. Sila pilih kod lain.')
         return
