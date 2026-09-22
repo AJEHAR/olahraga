@@ -2,12 +2,13 @@ import { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { ErrorBanner } from '../components/UI'
+import { resolveLoginEmail } from '../lib/credentials'
 
 export default function Login() {
   const { signIn } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
-  const [email, setEmail] = useState('')
+  const [loginId, setLoginId] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -17,7 +18,7 @@ export default function Login() {
     setError('')
     setBusy(true)
     try {
-      await signIn({ email, password })
+      await signIn({ email: resolveLoginEmail(loginId), password })
       navigate(location.state?.from?.pathname || '/', { replace: true })
     } catch (err) {
       setError(mapAuthError(err))
@@ -35,13 +36,13 @@ export default function Login() {
       <form onSubmit={handleSubmit} className="card space-y-4 p-5">
         <ErrorBanner message={error} />
         <div>
-          <label className="label">Emel</label>
+          <label className="label">Username / Emel</label>
           <input
             className="input"
-            type="email"
             required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            autoCapitalize="none"
+            value={loginId}
+            onChange={(e) => setLoginId(e.target.value)}
           />
         </div>
         <div>
@@ -71,7 +72,7 @@ export default function Login() {
 function mapAuthError(err) {
   const code = err?.code || ''
   if (code.includes('invalid-credential') || code.includes('wrong-password') || code.includes('user-not-found')) {
-    return 'Emel atau kata laluan tidak sah.'
+    return 'Username/Emel atau kata laluan tidak sah.'
   }
   if (code.includes('too-many-requests')) return 'Terlalu banyak percubaan. Cuba lagi sebentar.'
   return 'Log masuk gagal. Sila cuba lagi.'
