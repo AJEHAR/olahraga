@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase/config'
 import { useAuth } from '../context/AuthContext'
 import { ErrorBanner } from '../components/UI'
@@ -38,15 +38,29 @@ export default function SignUpAdmin() {
 
       const password = generatePassword()
       const pseudoEmail = toPseudoEmail(username)
-      const user = await signUpAsAdmin({ email: pseudoEmail, password })
-      await addDoc(collection(db, 'competitions'), {
-        code: codeUpper,
-        name: form.compName,
-        orgId: user.uid,
-        orgName: form.orgName,
-        pointsTable: DEFAULT_POINTS_TABLE,
-        createdAt: serverTimestamp(),
-      })
+
+      let user
+      try {
+        user = await signUpAsAdmin({ email: pseudoEmail, password })
+      } catch (err) {
+        err.stepLabel = 'akaun/users'
+        throw err
+      }
+
+      try {
+        await setDoc(doc(db, 'competitions', codeUpper), {
+          code: codeUpper,
+          name: form.compName,
+          orgId: user.uid,
+          orgName: form.orgName,
+          pointsTable: DEFAULT_POINTS_TABLE,
+          createdAt: serverTimestamp(),
+        })
+      } catch (err) {
+        err.stepLabel = 'competitions'
+        throw err
+      }
+
       setCreated({ username, password })
     } catch (err) {
       setError(mapError(err))
@@ -145,5 +159,6 @@ function mapError(err) {
   const code = err?.code || ''
   if (code.includes('email-already-in-use')) return 'Kod Pertandingan ini sudah digunakan. Sila pilih kod lain.'
   const detail = code || err?.message || 'ralat tidak diketahui'
-  return `Pendaftaran gagal (${detail}). Sila cuba lagi.`
+  const step = err?.stepLabel ? ` [langkah: ${err.stepLabel}]` : ''
+  return `Pendaftaran gagal (${detail})${step}. Sila cuba lagi.`
 }
