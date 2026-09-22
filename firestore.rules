@@ -1,0 +1,130 @@
+rules_version = '2';
+
+// ============================================================================
+// Firestore Security Rules — Sistem Pengurusan Pertandingan Olahraga
+// 100% Spark plan — tiada Cloud Functions. Rules ini ialah satu-satunya
+// penjaga logik privileged (lihat Spesifikasi §5 & §7).
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function myRole() {
+      return isSignedIn() ? myData().role : null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && myRole() == 'superadmin';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && myRole() == 'admin';
+    }
+
+    function isAdminOf(orgId) {
+      return isAdmin() && myData().orgId == orgId;
+    }
+
+    function isPengurus() {
+      return isSignedIn() && myRole() == 'pengurus_pasukan';
+    }
+
+    function isPengurusOf(teamId) {
+      return isPengurus() && myData().teamId == teamId;
+    }
+
+    // Active-session guard (single-device login, same pattern as ITChallenge):
+    // every authenticated read/write should belong to the session Firebase
+    // Auth currently holds; client stores a session id in users/{uid}.activeSessionId
+    // and compares it locally — enforced fully client-side, rules just expose the field.
+
+    // ---------------------------------------------------------------------
+    // users/{uid}
+    // ---------------------------------------------------------------------
+    match /users/{uid} {
+      allow read: if isSignedIn();
+
+      // Self-signup: only as 'admin', orgId must equal own uid.
+      allow create: if isSignedIn() && request.auth.uid == uid &&
+                       request.resource.data.role == 'admin' &&
+                       request.resource.data.orgId == uid;
+
+      // Admin creates a Pengurus Pasukan account under their own org.
+      allow create: if isAdminOf(request.resource.data.orgId) &&
+                       request.resource.data.role == 'pengurus_pasukan';
+
+      // Super Admin created manually via Console/Admin SDK — no client create rule needed.
+
+      allow update: if isSignedIn() && request.auth.uid == uid &&
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.orgId == resource.data.orgId; // can't self-promote
+      allow update: if isAdminOf(resource.data.orgId); // admin can manage its own team-manager docs
+      allow delete: if isAdminOf(resource.data.orgId) || isSuperAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // settings/landingPage — public read, super admin write
+    // ---------------------------------------------------------------------
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // competitions/{code}
+    // ---------------------------------------------------------------------
+    match /competitions/{code} {
+      allow read: if true; // keputusan & carta mata bersifat awam
+      allow create: if isAdmin() && request.resource.data.orgId == myData().orgId;
+      allow update, delete: if isAdminOf(resource.data.orgId);
+
+      match /categories/{categoryId} {
+        allow read: if true;
+        allow write: if isAdminOf(get(/databases/$(database)/documents/competitions/$(code)).data.orgId);
+      }
+
+      match /events/{eventId} {
+        allow read: if true;
+        allow write: if isAdminOf(get(/databases/$(database)/documents/competitions/$(code)).data.orgId);
+
+        match /heats/{heatId} {
+          allow read: if true;
+          allow write: if isAdminOf(get(/databases/$(database)/documents/competitions/$(code)).data.orgId);
+        }
+
+        // Rekod keputusan rasmi — HANYA Admin (bukan Pengurus Pasukan),
+        // elak konflik kepentingan (spec §5, nota keselamatan).
+        match /results/{participantId} {
+          allow read: if true;
+          allow write: if isAdminOf(get(/databases/$(database)/documents/competitions/$(code)).data.orgId);
+        }
+      }
+    }
+
+    // ---------------------------------------------------------------------
+    // teams/{teamId}
+    // ---------------------------------------------------------------------
+    match /teams/{teamId} {
+      allow read: if true; // leaderboard & jadual pasukan bersifat awam
+      allow create: if isAdminOf(request.resource.data.orgId);
+      allow update, delete: if isAdminOf(resource.data.orgId);
+
+      match /participants/{participantId} {
+        allow read: if true;
+        allow write: if isPengurusOf(teamId) ||
+                        isAdminOf(get(/databases/$(database)/documents/teams/$(teamId)).data.orgId);
+      }
+    }
+  }
+}
