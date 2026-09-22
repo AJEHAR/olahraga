@@ -144,5 +144,6 @@ function CredentialRow({ label, value }) {
 function mapError(err) {
   const code = err?.code || ''
   if (code.includes('email-already-in-use')) return 'Kod Pertandingan ini sudah digunakan. Sila pilih kod lain.'
-  return 'Pendaftaran gagal. Sila cuba lagi.'
+  const detail = code || err?.message || 'ralat tidak diketahui'
+  return `Pendaftaran gagal (${detail}). Sila cuba lagi.`
 }
